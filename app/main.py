@@ -1,10 +1,14 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from typing import Dict, Any
 from .models import GraphCreateRequest, GraphRunRequest, GraphStateResponse
-from .engine import engine, runs_db
+from .engine import engine
 from .registry import node_registry
+from .database import engine as db_engine, Base
 
-app = FastAPI(title="Agent Workflow Engine")
+# Initialize DB tables
+Base.metadata.create_all(bind=db_engine)
+
+app = FastAPI(title="Durable Agent Orchestrator")
 
 @app.get("/")
 def home():
@@ -24,10 +28,21 @@ def create_graph(request: GraphCreateRequest):
 
 @app.post("/graph/run")
 async def run_graph(request: GraphRunRequest):
-    # This runs synchronously in the response (awaiting the async function)
-    # matching the requirement: "Output: final state + a simple execution log"
     try:
         run = await engine.run_graph(request.graph_id, request.initial_state)
+        return {
+            "run_id": run.run_id,
+            "status": run.status,
+            "final_state": run.state,
+            "logs": run.logs
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/graph/resume/{run_id}")
+async def resume_run(run_id: str):
+    try:
+        run = await engine.resume_run(run_id)
         return {
             "run_id": run.run_id,
             "status": run.status,

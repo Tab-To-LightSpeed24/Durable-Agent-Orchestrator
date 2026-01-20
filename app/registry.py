@@ -59,6 +59,18 @@ node_registry.register("profile_data", profile_data)
 node_registry.register("identify_anomalies", identify_anomalies)
 node_registry.register("generate_rules", generate_rules)
 node_registry.register("apply_rules", apply_rules)
+node_registry.register("apply_rules", apply_rules)
 node_registry.register("finish_pipeline", finish_pipeline)
+
+# HITL Tool
+def wait_for_approval(state: Dict[str, Any]) -> Dict[str, Any]:
+    print("-> Creating approval request...")
+    # We don't block here technically; the engine handles the suspension based on a signal or we can just return.
+    # But to follow the pattern, we might rely on the engine detecting this node or a flag.
+    # For now, we'll just set a flag in the state that the engine check.
+    state["__suspend__"] = True
+    return state
+
+node_registry.register("wait_for_approval", wait_for_approval)
 
 

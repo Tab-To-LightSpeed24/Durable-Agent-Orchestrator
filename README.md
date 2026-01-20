@@ -1,14 +1,12 @@
-# Agent Workflow Engine
+# Durable Agent Orchestrator
 
-A minimal agent workflow engine inspired by LangGraph. It allows defining graphs of nodes (Python functions) and edges (transitions with conditions), maintaining a shared state.
+A failsafe, database-backed workflow engine inspired by Temporal and LangGraph. It enables **durable execution**, **human-in-the-loop (HITL)** approvals, and **crash recovery** for complex agentic workflows.
 
 ## Features
-- **Nodes**: Python functions reading/modifying shared state.
-- **Edges**: Directed connections with optional conditional logic.
-- **State**: A flexible dictionary passed between nodes.
-- **Branching**: Conditional transitions based on state values.
-- **Looping**: Cycles in the graph are supported (capped at 50 steps for safety).
-- **API**: FastAPI endpoints to create and run graphs.
+- **Durable Execution**: Every step is checkpointed to PostgreSQL/SQLite. If the server crashes, the workflow can resume exactly where it left off.
+- **Human-in-the-Loop (HITL)**: Native support for "Wait for Approval" steps that suspend execution and release resources until an external API signal is received.
+- **Dynamic Graph Logic**: Define workflows as JSON graphs with branching conditions (loops, if/else) evaluated at runtime.
+- **State Persistence**: The full context (variables, history) is preserved across server restarts.
 
 ## Setup & Running
 
@@ -16,10 +14,10 @@ A minimal agent workflow engine inspired by LangGraph. It allows defining graphs
    ```bash
    pip install -r requirements.txt
    ```
+   *Requires `sqlalchemy` and `psycopg2-binary` (or uses built-in sqlite for dev).*
 
+2. **Start the Server**:
    ```bash
-   python -m uvicorn app.main:app --reload
-   # OR
    python run_server.py
    ```
    The API will point to `http://127.0.0.1:8000`.
@@ -29,24 +27,21 @@ A minimal agent workflow engine inspired by LangGraph. It allows defining graphs
 ### 1. Check Available Tools
 `GET /tools`
 
-### 2. Create a Graph (Data Quality Example)
+### 2. Create a Graph
 `POST /graph/create`
 **Body**:
 ```json
 {
   "nodes": [
-    {"id": "profile", "function": "profile_data"},
-    {"id": "check", "function": "identify_anomalies"},
-    {"id": "fix", "function": "apply_rules"},
-    {"id": "end", "function": "finish_pipeline"}
+    {"id": "step1", "function": "profile_data"},
+    {"id": "step2", "function": "wait_for_approval"},
+    {"id": "step3", "function": "finish_pipeline"}
   ],
   "edges": [
-    {"source": "profile", "target": "check"},
-    {"source": "check", "target": "fix", "condition": {"key": "anomaly_count", "operator": ">", "value": 5}},
-    {"source": "check", "target": "end", "condition": {"key": "anomaly_count", "operator": "<=", "value": 5}},
-    {"source": "fix", "target": "check"}
+    {"source": "step1", "target": "step2"},
+    {"source": "step2", "target": "step3"}
   ],
-  "start_node": "profile"
+  "start_node": "step1"
 }
 ```
 
@@ -56,26 +51,33 @@ A minimal agent workflow engine inspired by LangGraph. It allows defining graphs
 ```json
 {
   "graph_id": "<ID_FROM_CREATE>",
-  "initial_state": {"anomaly_count": 50}
+  "initial_state": {"project_name": "Demo"}
 }
 ```
 
-### 4. Check State (Optional, for ongoing/past runs)
+### 4. Resume a Suspended Run (HITL)
+If a workflow hits a `wait_for_approval` node, it enters `awaiting_approval` status. To approve and continue:
+`POST /graph/resume/{run_id}`
+
+### 5. Check State
 `GET /graph/state/{run_id}`
 
-## Quick Start Demo
-We have provided a script to demonstrate the API usage efficiently.
-1. Start the server: 
-   ```bash
-   python run_server.py
-   ```
-2. In another terminal, run: 
+## Demos
+We have provided scripts to demonstrate the capabilities:
+
+1. **Data Quality Pipeline (Loops & Logic)**:
    ```bash
    python data_quality_demo.py
    ```
+2. **Persistence & HITL (Pause/Resume)**:
+   ```bash
+   python test_persistence.py
+   ```
 
-## Future Improvements
-- **Persistent Storage**: Use SQLite/Postgres for generic persistence of graphs and run history.
-- **Dynamic Tool Loading**: Allow uploading Python scripts safely.
-- **Async Nodes**: Fully async node execution.
-- **Visualizer**: distinct UI to view the graph topology.
+## Architecture
+- **Engine**: Python 3.10+ async execution loop.
+- **Database**: SQLAlchemy ORM (PostgreSQL/SQLite).
+- **API**: FastAPI.
+
+## Docs
+See `TECHNICAL_DOCS.md` for a deep dive into the architecture and database schema.
